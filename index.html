@@ -5,43 +5,232 @@
     <title>AI 自动标注工具 V2.1 - 自定义类别版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <style>
-        body { font-family: sans-serif; padding: 20px; background-color: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h2 { color: #333; margin-bottom: 5px; }
-        .tips { color: #666; font-size: 14px; margin-bottom: 20px; }
-        #canvas-container { margin-top: 20px; border: 2px dashed #ccc; display: inline-block; position: relative; }
-        button, input { padding: 10px; font-size: 14px; cursor: pointer; margin-right: 10px; border-radius: 4px; border: 1px solid #ccc; }
-        #exportBtn { background-color: #4CAF50; color: white; border: none; font-weight: bold; }
-        #exportBtn:hover { background-color: #45a049; }
-        #drawBtn { background-color: #2196F3; color: white; border: none; font-weight: bold; }
-        #drawBtn:hover { background-color: #0b7dda; }
-        .toolbar { margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 5px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px;}
+        :root {
+            --bg-1: #f5f7fa;
+            --bg-2: #eef3f8;
+            --panel: #ffffff;
+            --line: #d9e2ec;
+            --text-main: #1f2937;
+            --text-sub: #52606d;
+            --brand: #1363df;
+            --brand-dark: #0f52b4;
+            --success: #1f9d55;
+            --success-dark: #157347;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+            color: var(--text-main);
+            background: radial-gradient(circle at 20% 0%, #ffffff 0%, var(--bg-1) 45%, var(--bg-2) 100%);
+        }
+
+        .container {
+            max-width: 1320px;
+            margin: 0 auto;
+            background: var(--panel);
+            border: 1px solid rgba(31, 41, 55, 0.08);
+            border-radius: 18px;
+            box-shadow: 0 16px 45px rgba(15, 23, 42, 0.08);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 24px 28px 16px;
+            background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .header h2 {
+            margin: 0 0 8px;
+            font-size: 28px;
+            font-weight: 700;
+            color: #102a43;
+        }
+
+        .tips {
+            margin: 0;
+            font-size: 14px;
+            color: var(--text-sub);
+            line-height: 1.65;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            min-height: 620px;
+        }
+
+        .control-panel {
+            padding: 22px;
+            border-right: 1px solid var(--line);
+            background: #fbfcfe;
+        }
+
+        .panel-title {
+            margin: 0 0 14px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #243b53;
+        }
+
+        .field-group {
+            margin-bottom: 14px;
+        }
+
+        .field-group label {
+            display: block;
+            margin-bottom: 7px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #334e68;
+        }
+
+        input {
+            width: 100%;
+            height: 40px;
+            padding: 0 12px;
+            font-size: 14px;
+            border: 1px solid #cbd2d9;
+            border-radius: 10px;
+            background: #fff;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        input:focus {
+            border-color: var(--brand);
+            box-shadow: 0 0 0 3px rgba(19, 99, 223, 0.15);
+        }
+
+        input[type="file"] {
+            height: auto;
+            padding: 9px 10px;
+            cursor: pointer;
+        }
+
+        button {
+            width: 100%;
+            height: 42px;
+            border: 0;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.1s ease, filter 0.15s ease;
+        }
+
+        button:hover { filter: brightness(0.96); }
+        button:active { transform: translateY(1px); }
+
+        #drawBtn {
+            margin-top: 6px;
+            margin-bottom: 10px;
+            background-color: var(--brand);
+        }
+
+        #drawBtn:hover { background-color: var(--brand-dark); }
+
+        #exportBtn { background-color: var(--success); }
+        #exportBtn:hover { background-color: var(--success-dark); }
+
+        .hint-card {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px dashed #bcccdc;
+            background: #f7fafc;
+            font-size: 13px;
+            color: #486581;
+            line-height: 1.6;
+        }
+
+        .workspace {
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .workspace-title {
+            margin: 0 0 14px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #243b53;
+        }
+
+        #canvas-container {
+            border: 2px dashed #bcccdc;
+            border-radius: 12px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            min-height: 520px;
+            padding: 10px;
+            position: relative;
+            overflow: auto;
+        }
+
+        #c {
+            display: block;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 980px) {
+            body { padding: 14px; }
+            .content { grid-template-columns: 1fr; }
+            .control-panel { border-right: none; border-bottom: 1px solid var(--line); }
+            .header h2 { font-size: 24px; }
+            #canvas-container { min-height: 420px; }
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>🎯 机器视觉自动标注工具 V2.1</h2>
-    <div class="tips">
-        💡 <b>快捷键：</b>选中框后按 <b>Delete</b> 或 <b>Backspace</b> 键可直接删除。<br>
-        💡 <b>手动绘制：</b>填好新物体的 ID 和名称，点击“开启手动绘制”，在图上拖拽即可。
+    <div class="header">
+        <h2>机器视觉自动标注工具 V2.1</h2>
+        <p class="tips">
+            快捷键：选中标注框后按 <b>Delete</b> 或 <b>Backspace</b> 可删除。<br>
+            手动绘制：填写类别 ID 和名称后，点击“开启手动绘制”，在图片上拖拽创建新框。
+        </p>
     </div>
 
-    <div class="toolbar">
-        <input type="file" id="imageUpload" accept="image/*">
+    <div class="content">
+        <aside class="control-panel">
+            <h3 class="panel-title">操作面板</h3>
 
-        <label for="classIdInput">ID:</label>
-        <input type="number" id="classIdInput" value="0" min="0" style="width: 50px;">
+            <div class="field-group">
+                <label for="imageUpload">上传图片</label>
+                <input type="file" id="imageUpload" accept="image/*">
+            </div>
 
-        <label for="classNameInput">名称:</label>
-        <input type="text" id="classNameInput" value="新物体" style="width: 80px;">
+            <div class="field-group">
+                <label for="classIdInput">类别 ID</label>
+                <input type="number" id="classIdInput" value="0" min="0">
+            </div>
 
-        <button id="drawBtn">✏️ 开启手动绘制</button>
-        <button id="exportBtn">⬇️ 导出 YOLO 格式 (.txt)</button>
-    </div>
+            <div class="field-group">
+                <label for="classNameInput">类别名称</label>
+                <input type="text" id="classNameInput" value="新物体">
+            </div>
 
-    <div id="canvas-container">
-        <canvas id="c"></canvas>
+            <button id="drawBtn">✏️ 开启手动绘制</button>
+            <button id="exportBtn">⬇️ 导出 YOLO 格式 (.txt)</button>
+
+            <div class="hint-card">
+                上传后会自动调用后端接口进行检测并绘制结果。<br>
+                手动画框会以你输入的类别信息保存到导出文件中。
+            </div>
+        </aside>
+
+        <section class="workspace">
+            <h3 class="workspace-title">标注画布</h3>
+            <div id="canvas-container">
+                <canvas id="c"></canvas>
+            </div>
+        </section>
     </div>
 </div>
 
