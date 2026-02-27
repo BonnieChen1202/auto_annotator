@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 自动标注工具 V2.1 - 自定义类别版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { color: #333; margin-bottom: 5px; }
+        .tips { color: #666; font-size: 14px; margin-bottom: 20px; }
+        #canvas-container { margin-top: 20px; border: 2px dashed #ccc; display: inline-block; position: relative; }
+        button, input { padding: 10px; font-size: 14px; cursor: pointer; margin-right: 10px; border-radius: 4px; border: 1px solid #ccc; }
+        #exportBtn { background-color: #4CAF50; color: white; border: none; font-weight: bold; }
+        #exportBtn:hover { background-color: #45a049; }
+        #drawBtn { background-color: #2196F3; color: white; border: none; font-weight: bold; }
+        #drawBtn:hover { background-color: #0b7dda; }
+        .toolbar { margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 5px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🎯 机器视觉自动标注工具 V2.1</h2>
+    <div class="tips">
+        💡 <b>快捷键：</b>选中框后按 <b>Delete</b> 或 <b>Backspace</b> 键可直接删除。<br>
+        💡 <b>手动绘制：</b>填好新物体的 ID 和名称，点击“开启手动绘制”，在图上拖拽即可。
+    </div>
+
+    <div class="toolbar">
+        <input type="file" id="imageUpload" accept="image/*">
+
+        <label for="classIdInput">ID:</label>
+        <input type="number" id="classIdInput" value="0" min="0" style="width: 50px;">
+
+        <label for="classNameInput">名称:</label>
+        <input type="text" id="classNameInput" value="新物体" style="width: 80px;">
+
+        <button id="drawBtn">✏️ 开启手动绘制</button>
+        <button id="exportBtn">⬇️ 导出 YOLO 格式 (.txt)</button>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="c"></canvas>
+    </div>
+</div>
+
+<script>
+    const canvas = new fabric.Canvas('c');
+    let currentFileName = "labels";
+
+    // 上传并呼叫 AI
+    document.getElementById('imageUpload').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        currentFileName = file.name.split('.').slice(0, -1).join('.');
+
+        const reader = new FileReader();
+        reader.onload = function(f) {
+            fabric.Image.fromURL(f.target.result, function(img) {
+                canvas.setWidth(img.width);
+                canvas.setHeight(img.height);
+                canvas.clear();
+                canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+            });
+        };
+        reader.readAsDataURL(file);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('http://127.0.0.1:8000/predict', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+
+            if(result.code === 200) {
+                const detections = result.data.detections;
+                detections.forEach(det => {
+                    const [xmin, ymin, xmax, ymax] = det.bbox;
+                    createBox(xmin, ymin, xmax - xmin, ymax - ymin, det.class_id, `${det.class_name} ${(det.confidence*100).toFixed(0)}%`);
+                });
+            }
+        } catch (error) {
+            console.error(error);
+            alert("请求失败，请检查终端里的 main.py 是否在运行！");
+        }
+    });
+
+    // 创建标注框的通用函数
+    function createBox(left, top, width, height, classId, labelText, isManual = false) {
+        const color = isManual ? '#32CD32' : '#FF4500';
+        const rect = new fabric.Rect({
+            left: left, top: top, width: width, height: height,
+            fill: isManual ? 'rgba(50, 205, 50, 0.2)' : 'rgba(255, 69, 0, 0.2)',
+            stroke: color, strokeWidth: 3,
+            cornerColor: 'blue', cornerSize: 12, transparentCorners: false,
+            selectable: true, class_id: classId
+        });
+
+        const text = new fabric.Text(labelText, {
+            left: left, top: top > 20 ? top - 22 : 0,
+            fontSize: 18, fill: 'white', backgroundColor: color, selectable: false
+        });
+
+        rect.textLabel = text;
+        rect.on('moving', function() {
+            text.set({ left: rect.left, top: rect.top > 20 ? rect.top - 22 : 0 });
+        });
+        canvas.add(rect, text);
+    }
+
+    // 删除功能
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            const activeObject = canvas.getActiveObject();
+            if (activeObject && activeObject.type === 'rect') {
+                if (activeObject.textLabel) canvas.remove(activeObject.textLabel);
+                canvas.remove(activeObject);
+                canvas.discardActiveObject();
+                canvas.requestRenderAll();
+            }
+        }
+    });
+
+    // 绘制新框功能
+    let isDrawMode = false, isDrawing = false, startX, startY, tempRect;
+    const drawBtn = document.getElementById('drawBtn');
+
+    drawBtn.addEventListener('click', function() {
+        isDrawMode = !isDrawMode;
+        if (isDrawMode) {
+            this.innerText = "⏹ 退出绘制模式";
+            this.style.backgroundColor = "#f44336";
+            canvas.defaultCursor = 'crosshair';
+            canvas.getObjects('rect').forEach(obj => obj.set('selectable', false));
+            canvas.discardActiveObject();
+            canvas.requestRenderAll();
+        } else {
+            this.innerText = "✏️ 开启手动绘制";
+            this.style.backgroundColor = "#2196F3";
+            canvas.defaultCursor = 'default';
+            canvas.getObjects('rect').forEach(obj => obj.set('selectable', true));
+        }
+    });
+
+    canvas.on('mouse:down', function(o) {
+        if (!isDrawMode) return;
+        isDrawing = true;
+        const pointer = canvas.getPointer(o.e);
+        startX = pointer.x; startY = pointer.y;
+
+        tempRect = new fabric.Rect({
+            left: startX, top: startY, width: 0, height: 0,
+            fill: 'rgba(50, 205, 50, 0.2)', stroke: '#32CD32', strokeWidth: 3, selectable: false
+        });
+        canvas.add(tempRect);
+    });
+
+    canvas.on('mouse:move', function(o) {
+        if (!isDrawing) return;
+        const pointer = canvas.getPointer(o.e);
+        if (startX > pointer.x) tempRect.set({ left: Math.abs(pointer.x) });
+        if (startY > pointer.y) tempRect.set({ top: Math.abs(pointer.y) });
+        tempRect.set({ width: Math.abs(startX - pointer.x) });
+        tempRect.set({ height: Math.abs(startY - pointer.y) });
+        canvas.renderAll();
+    });
+
+    canvas.on('mouse:up', function() {
+        if (!isDrawing) return;
+        isDrawing = false;
+        if (tempRect.width < 5 || tempRect.height < 5) {
+            canvas.remove(tempRect);
+            return;
+        }
+
+        // 核心修改：读取 ID 和名称
+        const classId = parseInt(document.getElementById('classIdInput').value) || 0;
+        const className = document.getElementById('classNameInput').value || '未知';
+
+        canvas.remove(tempRect);
+        createBox(tempRect.left, tempRect.top, tempRect.width, tempRect.height, classId, `${className} (手动)`, true);
+    });
+
+    // 导出功能
+    document.getElementById('exportBtn').addEventListener('click', function() {
+        const objects = canvas.getObjects('rect');
+        if (objects.length === 0) { alert("没有框可以导出！"); return; }
+
+        const imgWidth = canvas.getWidth();
+        const imgHeight = canvas.getHeight();
+        let yoloTextLines = [];
+
+        objects.forEach(rect => {
+            const actualWidth = rect.width * rect.scaleX;
+            const actualHeight = rect.height * rect.scaleY;
+            const centerX = rect.left + actualWidth / 2;
+            const centerY = rect.top + actualHeight / 2;
+
+            const normX = (centerX / imgWidth).toFixed(6);
+            const normY = (centerY / imgHeight).toFixed(6);
+            const normW = (actualWidth / imgWidth).toFixed(6);
+            const normH = (actualHeight / imgHeight).toFixed(6);
+
+            yoloTextLines.push(`${rect.class_id} ${normX} ${normY} ${normW} ${normH}`);
+        });
+
+        const blob = new Blob([yoloTextLines.join('\n')], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${currentFileName}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+</script>
+
+</body>
+</html>
